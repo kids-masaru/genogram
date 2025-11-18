@@ -88,12 +88,3 @@ function App() {
     </ThemeProvider>
   );
 }
-
-export default App;
-```eof
-
-### 次のステップ
-
-1.  GitHubにある `src/App.jsx` の**中身を、上記のコードで完全に上書き**してください。
-2.  （推奨）`src/App.css` ファイルはもう不要ですので、プロジェクトから**削除**してください。
-3.  変更をGitHubにプッシュして、Vercelのデプロイが再実行されるのをお待ちください。
