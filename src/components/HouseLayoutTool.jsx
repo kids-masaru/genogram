@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
-import { Button } from '@/components/ui/button.jsx'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Input } from '@/components/ui/input.jsx'
-import { Label } from '@/components/ui/label.jsx'
-import { Textarea } from '@/components/ui/textarea.jsx'
-import { Badge } from '@/components/ui/badge.jsx'
-import { Separator } from '@/components/ui/separator.jsx'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
 import { 
   Home, Square, MousePointer, Type, Palette, 
   RotateCcw, Trash2, Download, X, Move, 
   Bed, Sofa, Car, Bath, ChefHat, Tv, Armchair,
-  DoorOpen, Stairs, AlertTriangle, Accessibility
+  DoorOpen, 
+  ListOrdered, // <-- 'Stairs' から 'ListOrdered' に変更
+  AlertTriangle, Accessibility, Minus // 'Minus' をインポート
 } from 'lucide-react'
 
 const HouseLayoutTool = () => {
@@ -54,13 +56,13 @@ const HouseLayoutTool = () => {
     // 設備
     door: { name: 'ドア', icon: DoorOpen, width: 20, height: 60, color: '#92400e', category: 'fixture' },
     window: { name: '窓', icon: Square, width: 60, height: 20, color: '#3b82f6', category: 'fixture' },
-    stairs: { name: '階段', icon: Stairs, width: 80, height: 120, color: '#6b7280', category: 'fixture' },
+    stairs: { name: '階段', icon: ListOrdered, width: 80, height: 120, color: '#6b7280', category: 'fixture' }, // <-- 'Stairs' から 'ListOrdered' に変更
     bath: { name: '浴槽', icon: Bath, width: 120, height: 80, color: '#0ea5e9', category: 'fixture' },
     kitchen: { name: 'キッチン', icon: ChefHat, width: 100, height: 60, color: '#dc2626', category: 'fixture' },
     
     // バリアフリー・安全
     ramp: { name: 'スロープ', icon: Accessibility, width: 100, height: 40, color: '#16a34a', category: 'safety' },
-    handrail: { name: '手すり', icon: Minus, width: 80, height: 10, color: '#ca8a04', category: 'safety' },
+    handrail: { name: '手すり', icon: Minus, width: 80, height: 10, color: '#ca8a04', category: 'safety' }, // <-- 'Minus' を使用
     danger: { name: '危険箇所', icon: AlertTriangle, width: 30, height: 30, color: '#dc2626', category: 'safety' }
   }
 
@@ -71,16 +73,29 @@ const HouseLayoutTool = () => {
 
     const resizeCanvas = () => {
       const container = canvas.parentElement
+      if (!container) return; // コンテナがない場合は処理を中断
       const rect = container.getBoundingClientRect()
       canvas.width = rect.width
       canvas.height = Math.max(600, rect.width * 0.7)
       drawCanvas()
     }
 
-    resizeCanvas()
+    // ResizeObserverを使用してコンテナのサイズ変更を監視
+    const container = canvas.parentElement
+    if (container) {
+      const resizeObserver = new ResizeObserver(resizeCanvas)
+      resizeObserver.observe(container)
+      
+      // 初期描画
+      resizeCanvas()
+      
+      return () => resizeObserver.unobserve(container)
+    }
+
+    // フォールバックとしてwindowのリサイズイベントも残す
     window.addEventListener('resize', resizeCanvas)
     return () => window.removeEventListener('resize', resizeCanvas)
-  }, [items, walls, comments, selectedItem, showGrid])
+  }, [items, walls, comments, selectedItem, showGrid]) // 依存配列は変更なし
 
   // Save state for undo
   const saveState = () => {
@@ -159,6 +174,8 @@ const HouseLayoutTool = () => {
     // Draw items
     items.forEach(item => {
       const furniture = furnitureItems[item.type]
+      if (!furniture) return; // アイテムタイプが存在しない場合はスキップ
+
       const isSelected = selectedItem && selectedItem.id === item.id
       
       ctx.fillStyle = furniture.color + (isSelected ? 'CC' : '80')
@@ -211,6 +228,8 @@ const HouseLayoutTool = () => {
   const addFurnitureItem = (type) => {
     saveState()
     const furniture = furnitureItems[type]
+    if (!furniture) return; // 存在しないタイプの場合は何もしない
+
     const newItem = {
       id: Date.now(),
       type,
@@ -228,6 +247,7 @@ const HouseLayoutTool = () => {
   // Mouse events
   const handleCanvasMouseDown = (e) => {
     const canvas = canvasRef.current
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect()
     const x = snapToGrid(e.clientX - rect.left)
     const y = snapToGrid(e.clientY - rect.top)
@@ -264,13 +284,17 @@ const HouseLayoutTool = () => {
     
     if (currentTool === 'select') {
       // Check for item selection
-      const clickedItem = items.find(item => 
+      // zIndexの高いものが手前に来るようにソート
+      const sortedItems = [...items].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+      const clickedItem = sortedItems.reverse().find(item => 
         x >= item.x && x <= item.x + item.width &&
         y >= item.y && y <= item.y + item.height
       )
       
       const clickedComment = comments.find(comment => {
         const ctx = canvas.getContext('2d')
+        if (!ctx) return false;
         ctx.font = 'bold 14px sans-serif'
         const metrics = ctx.measureText(comment.text)
         return x >= comment.x && x <= comment.x + metrics.width &&
@@ -294,6 +318,7 @@ const HouseLayoutTool = () => {
 
   const handleCanvasMouseMove = (e) => {
     const canvas = canvasRef.current
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect()
     const x = snapToGrid(e.clientX - rect.left)
     const y = snapToGrid(e.clientY - rect.top)
@@ -434,6 +459,7 @@ const HouseLayoutTool = () => {
   // Save as image
   const saveAsImage = () => {
     const canvas = canvasRef.current
+    if (!canvas) return;
     const link = document.createElement('a')
     link.download = 'house_layout.png'
     link.href = canvas.toDataURL()
@@ -442,7 +468,7 @@ const HouseLayoutTool = () => {
 
   // Clear all
   const clearAll = () => {
-    if (confirm('すべてのデータを削除しますか？')) {
+    if (window.confirm('すべてのデータを削除しますか？')) {
       saveState()
       setItems([])
       setWalls([])
