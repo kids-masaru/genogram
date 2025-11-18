@@ -76,11 +76,3 @@ export default {
   },
   plugins: [],
 }
-```eof
-
-### 次のステップ
-
-1.  上記のコードを `tailwind.config.js` という名前で、`package.json` と同じ場所に保存してください。
-2.  変更をGitHubにプッシュしてください。
-
-Vercelが再デプロイを行い、今度こそTailwind CSSが正しく適用されて、レイアウト崩れが解消されるはずです。
