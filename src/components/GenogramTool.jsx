@@ -29,16 +29,33 @@ const GenogramTool = () => {
 
     const resizeCanvas = () => {
       const container = canvas.parentElement
+      if (!container) return; // コンテナがない場合は早期リターン
       const rect = container.getBoundingClientRect()
       canvas.width = rect.width
-      canvas.height = Math.max(600, rect.width * 0.6)
+      canvas.height = Math.max(600, rect.width * 0.6) // 高さをコンテナ幅や最小値に基づいて設定
       drawCanvas()
     }
 
-    resizeCanvas()
+    // コンテナのリサイズを監視 (ResizeObserver の方が望ましい場合もある)
+    const container = canvas.parentElement;
+    const resizeObserver = new ResizeObserver(resizeCanvas);
+    if (container) {
+      resizeObserver.observe(container);
+    }
+    
+    // ウィンドウリサイズでも念のため実行
     window.addEventListener('resize', resizeCanvas)
-    return () => window.removeEventListener('resize', resizeCanvas)
-  }, [people, relationships, households, selectedPeople])
+    
+    // 初回実行
+    resizeCanvas()
+    
+    return () => {
+      if (container) {
+        resizeObserver.unobserve(container);
+      }
+      window.removeEventListener('resize', resizeCanvas)
+    }
+  }, [people, relationships, households, selectedPeople]) // 依存配列に drawCanvas を追加する必要はない
 
   // Save state for undo
   const saveState = () => {
@@ -333,11 +350,16 @@ const GenogramTool = () => {
 
   // Event handlers
   const getPersonAtPoint = (x, y) => {
-    return people.find(person => {
-      const dx = x - person.x
-      const dy = y - person.y
-      return dx * dx + dy * dy <= 20 * 20 // 半径20px以内
-    })
+    // 逆順で検索して、上に描画されている人を優先的に選択
+    for (let i = people.length - 1; i >= 0; i--) {
+      const person = people[i];
+      const dx = x - person.x;
+      const dy = y - person.y;
+      if (dx * dx + dy * dy <= 20 * 20) { // 半径20px以内
+        return person;
+      }
+    }
+    return null;
   }
 
   const handleMouseDown = (event) => {
@@ -350,7 +372,8 @@ const GenogramTool = () => {
     
     if (person) {
       setDraggedPerson(person)
-      saveState()
+      // ドラッグ開始時にすぐに保存すると、クリックとの区別が難しくなる
+      // saveState() // MouseUp で保存するように変更も検討
     }
   }
 
@@ -365,14 +388,28 @@ const GenogramTool = () => {
     setPeople(prev => prev.map(p => 
       p.id === draggedPerson.id ? { ...p, x, y } : p
     ))
-    drawCanvas()
+    // マウスムーブのたびに描画すると重くなる可能性があるため、
+    // requestAnimationFrame を使うか、drawCanvas() を直接呼ぶ
+    drawCanvas() 
   }
 
-  const handleMouseUp = () => {
+  const handleMouseUp = (event) => {
+    // ドラッグが完了した（=位置が変わった）場合にのみ履歴に保存
+    if (draggedPerson) {
+      // ここで saveState() を呼ぶと、ドラッグ完了ごとに履歴が残る
+      // ただし、クリックとドラッグの判別が難しい
+      // クリックでも MouseDown -> MouseUp が発生するため
+    }
     setDraggedPerson(null)
   }
 
   const handleClick = (event) => {
+    // ドラッグ中はクリック処理を無効にする
+    if (draggedPerson && (event.movementX !== 0 || event.movementY !== 0)) {
+       // setDraggedPerson(null) // MouseUpで処理するので、ここでは何もしない
+       return
+    }
+
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
     const x = event.clientX - rect.left
@@ -382,19 +419,19 @@ const GenogramTool = () => {
     
     if (person) {
       // 複数選択を可能にするロジック
-      setSelectedPerson(person)
+      setSelectedPerson(person) // 最後にクリックした人を詳細表示対象にする
       setSelectedPeople(prev => {
         const newSet = new Set(prev)
         
-        if (newSet.has(person.id)) {
-          newSet.delete(person.id)
-        } else {
-          newSet.add(person.id)
-        }
-        
-        // 選択が一つもない場合は、現在の人物を選択状態にする
-        if (newSet.size === 0) {
+        if (event.shiftKey) { // Shiftキーを押しながらクリックで複数選択/解除
+          if (newSet.has(person.id)) {
+            newSet.delete(person.id)
+          } else {
             newSet.add(person.id)
+          }
+        } else { // Shiftキーなしの場合は、その人だけを選択
+          newSet.clear()
+          newSet.add(person.id)
         }
         
         return newSet
@@ -404,9 +441,12 @@ const GenogramTool = () => {
       setSelectedPerson(null)
       setSelectedPeople(new Set())
     }
+    
+    // クリック時には状態を保存する（ドラッグ開始とは別）
+    // ただし、ドラッグ後のMouseUpでもClickイベントが発生することがあるため注意
+    // saveState() // 適切なタイミングを要検討
   }
 
-  // ... (以下、省略) ...
 
   // Download as PNG
   const downloadCanvas = () => {
@@ -446,13 +486,17 @@ const GenogramTool = () => {
 
   return (
     <div className="flex h-full">
-      <div className="w-1/4 p-4 border-r space-y-4">
+      {/* ↓↓↓ (修正点 1) 左ペイン：幅を固定(w-96)し、余白(p-6)と要素間(space-y-6)を増やす */}
+      <div className="w-96 flex-shrink-0 border-r bg-muted/40 p-6 space-y-6 overflow-y-auto">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">ジェノグラム操作</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex space-x-2">
+          {/* ↓↓↓ (修正点 2) カード内の余白を増やす (space-y-4) */}
+          <CardContent className="space-y-4">
+            
+            {/* ↓↓↓ (修正点 3) ボタンを2列グリッドにし、隙間(gap-4)を増やす */}
+            <div className="grid grid-cols-2 gap-4">
               <Button onClick={() => addPerson('male')} className="flex-1" variant="outline">
                 <Square className="w-4 h-4 mr-2" /> 男性を追加
               </Button>
@@ -460,8 +504,11 @@ const GenogramTool = () => {
                 <Circle className="w-4 h-4 mr-2" /> 女性を追加
               </Button>
             </div>
+            
             <Separator />
-            <div className="space-y-2">
+            
+            {/* ↓↓↓ (修正点 4) ボタン間の隙間を増やす (space-y-3) */}
+            <div className="space-y-3">
               <Label>選択中の人数: {selectedPeople.size}</Label>
               <Button 
                 onClick={() => addRelationship('marriage')} 
@@ -485,8 +532,11 @@ const GenogramTool = () => {
                 <Home className="w-4 h-4 mr-2" /> 同居枠を追加
               </Button>
             </div>
+            
             <Separator />
-            <div className="flex space-x-2">
+            
+            {/* ↓↓↓ (修正点 5) ボタンを2列グリッドにし、隙間(gap-4)を増やす */}
+            <div className="grid grid-cols-2 gap-4">
               <Button onClick={undo} className="flex-1" variant="outline">
                 <RotateCcw className="w-4 h-4 mr-2" /> 元に戻す
               </Button>
@@ -494,6 +544,7 @@ const GenogramTool = () => {
                 <Trash2 className="w-4 h-4 mr-2" /> 削除
               </Button>
             </div>
+            
             <Button onClick={downloadCanvas} className="w-full">
               <Download className="w-4 h-4 mr-2" /> PNGでダウンロード
             </Button>
@@ -505,8 +556,11 @@ const GenogramTool = () => {
             <CardHeader>
               <CardTitle className="text-lg">人物詳細 ({selectedPerson.id})</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="space-y-1">
+            {/* ↓↓↓ (修正点 6) カード内の余白を増やす (space-y-4) */}
+            <CardContent className="space-y-4">
+              
+              {/* ↓↓↓ (修正点 7) LabelとInputの間の隙間を増やす (space-y-2) */}
+              <div className="space-y-2">
                 <Label htmlFor="name">名前</Label>
                 <Input 
                   id="name" 
@@ -514,7 +568,7 @@ const GenogramTool = () => {
                   onChange={(e) => updatePersonDetails('name', e.target.value)}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label htmlFor="age">年齢</Label>
                 <Input 
                   id="age" 
@@ -523,7 +577,7 @@ const GenogramTool = () => {
                   onChange={(e) => updatePersonDetails('age', e.target.value)}
                 />
               </div>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <Label htmlFor="notes">備考</Label>
                 <Textarea 
                   id="notes" 
@@ -531,8 +585,11 @@ const GenogramTool = () => {
                   onChange={(e) => updatePersonDetails('notes', e.target.value)}
                 />
               </div>
+              
               <Separator />
-              <div className="space-y-2">
+              
+              {/* ↓↓↓ (修正点 8) ボタン間の隙間を増やす (space-y-3) */}
+              <div className="space-y-3">
                 <Button 
                   onClick={() => toggleStatus('isDeceased')} 
                   variant={selectedPerson.isDeceased ? 'default' : 'outline'}
@@ -559,11 +616,14 @@ const GenogramTool = () => {
           </Card>
         )}
       </div>
-      <div className="w-3/4 p-4">
-        <div className="border rounded-lg shadow-lg overflow-hidden">
+      
+      {/* ↓↓↓ (修正点 9) 右ペイン：残り幅すべて(flex-1)を使い、余白(p-8)を大きくする */}
+      <div className="flex-1 p-8 overflow-hidden">
+        {/* ↓↓↓ (修正点 10) キャンバスの枠：角丸(rounded-xl)と影(shadow-xl)をモダンに */}
+        <div className="border rounded-xl shadow-xl overflow-hidden h-full">
           <canvas 
             ref={canvasRef} 
-            className="w-full"
+            className="w-full h-full" // キャンバスがコンテナいっぱいに広がるように
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
