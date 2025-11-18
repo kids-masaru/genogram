@@ -28,7 +28,8 @@ function App() {
         
         {/* ヘッダー */}
         <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          <div className="container flex h-14 max-w-screen-2xl items-center">
+          {/* ↓↓↓ 修正点 (1) : この行から "max-w-screen-2xl" を削除しました */}
+          <div className="container flex h-14 items-center">
             <div className="mr-4 flex">
               <a className="mr-6 flex items-center space-x-2" href="/">
                 {/* ロゴやアイコンをここに追加できます */}
@@ -42,7 +43,8 @@ function App() {
         </header>
 
         {/* メインコンテンツ */}
-        <main className="flex-1 container max-w-screen-2xl mx-auto p-4 md:p-8">
+        {/* ↓↓↓ 修正点 (2) : この行から "max-w-screen-2xl" を削除しました */}
+        <main className="flex-1 container mx-auto p-4 md:p-8">
           
           {/* 3. タブコンポーネントで3つのツールを切り替えます */}
           <Tabs defaultValue="genogram" className="w-full">
