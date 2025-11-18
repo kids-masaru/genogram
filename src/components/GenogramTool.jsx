@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge.jsx'
 import { Separator } from '@/components/ui/separator.jsx'
 import { 
   Users, UserPlus, Heart, X, RotateCcw, Trash2, 
-  Download, Square, Circle, Home, Baby 
+  Download, Square, Circle, Home, Baby, MousePointerSquare
 } from 'lucide-react'
 
 const GenogramTool = () => {
@@ -21,41 +21,6 @@ const GenogramTool = () => {
   const [draggedPerson, setDraggedPerson] = useState(null)
   const [history, setHistory] = useState([])
   const [nextId, setNextId] = useState(1)
-
-  // Canvas setup
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const resizeCanvas = () => {
-      const container = canvas.parentElement
-      if (!container) return; // コンテナがない場合は早期リターン
-      const rect = container.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = Math.max(600, rect.width * 0.6) // 高さをコンテナ幅や最小値に基づいて設定
-      drawCanvas()
-    }
-
-    // コンテナのリサイズを監視 (ResizeObserver の方が望ましい場合もある)
-    const container = canvas.parentElement;
-    const resizeObserver = new ResizeObserver(resizeCanvas);
-    if (container) {
-      resizeObserver.observe(container);
-    }
-    
-    // ウィンドウリサイズでも念のため実行
-    window.addEventListener('resize', resizeCanvas)
-    
-    // 初回実行
-    resizeCanvas()
-    
-    return () => {
-      if (container) {
-        resizeObserver.unobserve(container);
-      }
-      window.removeEventListener('resize', resizeCanvas)
-    }
-  }, [people, relationships, households, selectedPeople]) // 依存配列に drawCanvas を追加する必要はない
 
   // Save state for undo
   const saveState = () => {
@@ -129,8 +94,7 @@ const GenogramTool = () => {
         setRelationships(prev => [...prev, newRel])
       })
     } else if (type === 'siblings' && personIds.length >= 2) {
-      // 兄弟姉妹関係は、親子関係で自動的に描画されるため、ここでは処理しない
-      // 必要であれば、特別な関係線（例：親密な関係）として追加可能
+      // (省略)
     }
     
     setSelectedPeople(new Set())
@@ -173,8 +137,8 @@ const GenogramTool = () => {
     setSelectedPerson(null)
   }
 
-  // Canvas drawing
-  const drawCanvas = () => {
+  // Canvas drawing (useCallbackで最適化)
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     
@@ -191,13 +155,13 @@ const GenogramTool = () => {
       const minY = Math.min(...members.map(m => m.y)) - 30
       const maxY = Math.max(...members.map(m => m.y)) + 30
       
-      ctx.strokeStyle = '#000000' // 同居は実線で囲む (手書きサンプルに合わせる)
+      ctx.strokeStyle = 'hsl(var(--foreground))' // テーマに合わせる
       ctx.setLineDash([]) // 実線
       ctx.lineWidth = 2
       ctx.strokeRect(minX, minY, maxX - minX, maxY - minY)
     })
     
-    // Draw relationships (Marriage/Partnership, Parent-Child, Siblings)
+    // Draw relationships
     const drawnChildren = new Set()
     
     relationships.filter(r => r.type === 'marriage').forEach(rel => {
@@ -206,7 +170,7 @@ const GenogramTool = () => {
       if (!person1 || !person2) return
       
       // 婚姻線 (Marriage Line)
-      ctx.strokeStyle = '#000000' // 黒線
+      ctx.strokeStyle = 'hsl(var(--foreground))'
       ctx.lineWidth = 2
       ctx.beginPath()
       ctx.moveTo(person1.x, person1.y - 20) // 図形の上端から
@@ -255,9 +219,9 @@ const GenogramTool = () => {
         })
       }
       
-      // 離婚線 (Divorce) - ユーザーの手書きサンプルにはないが、標準的な記号として残す
+      // 離婚線 (Divorce)
       if (rel.status === 'divorced') {
-        ctx.strokeStyle = '#000000'
+        ctx.strokeStyle = 'hsl(var(--foreground))'
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(midX - 10, midY - 10)
@@ -272,19 +236,14 @@ const GenogramTool = () => {
     people.forEach(person => {
       const isSelected = selectedPeople.has(person.id)
       
-      ctx.fillStyle = person.isDeceased ? '#374151' : '#ffffff'
-      ctx.strokeStyle = isSelected ? '#3b82f6' : '#6b7280'
+      ctx.fillStyle = 'hsl(var(--card))' // テーマに合わせる
+      ctx.strokeStyle = isSelected ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))'
       ctx.lineWidth = isSelected ? 3 : 2
       
       if (person.gender === 'male') {
         // Square for male
-        // 手書き風の図形
         ctx.beginPath()
-        ctx.moveTo(person.x - 20, person.y - 20)
-        ctx.lineTo(person.x + 20, person.y - 20)
-        ctx.lineTo(person.x + 20, person.y + 20)
-        ctx.lineTo(person.x - 20, person.y + 20)
-        ctx.closePath()
+        ctx.rect(person.x - 20, person.y - 20, 40, 40)
         ctx.fill()
         ctx.stroke()
         
@@ -295,8 +254,6 @@ const GenogramTool = () => {
         }
       } else {
         // Circle for female
-        ctx.beginPath()
-        // 手書き風の図形
         ctx.beginPath()
         ctx.arc(person.x, person.y, 20, 0, 2 * Math.PI)
         ctx.fill()
@@ -313,7 +270,7 @@ const GenogramTool = () => {
       
       // Draw deceased X
       if (person.isDeceased) {
-        ctx.strokeStyle = '#000000' // 死亡は黒線
+        ctx.strokeStyle = 'hsl(var(--foreground))'
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(person.x - 15, person.y - 15)
@@ -332,7 +289,7 @@ const GenogramTool = () => {
       }
       
       // Draw name and age
-      ctx.fillStyle = '#374151'
+      ctx.fillStyle = 'hsl(var(--foreground))' // テーマに合わせる
       ctx.font = '12px sans-serif'
       ctx.textAlign = 'center'
       const displayText = person.name || (person.gender === 'male' ? '男性' : '女性')
@@ -341,12 +298,38 @@ const GenogramTool = () => {
         ctx.fillText(`(${person.age}歳)`, person.x, person.y + 50)
       }
     })
-    
-    // Draw selected person info
-    if (selectedPerson) {
-      // ... (省略)
+  }, [people, relationships, households, selectedPeople]) // 依存配列
+
+  // Canvasの描画は、依存関係が変更されたときにuseEffectで実行
+  useEffect(() => {
+    drawCanvas()
+  }, [drawCanvas])
+
+  // Canvasのリサイズロジック (マウント時に1回だけ実行)
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const container = canvas.parentElement
+    if (!container) return
+
+    const resizeCanvas = () => {
+      const rect = container.getBoundingClientRect()
+      if (rect.width === 0) return;
+      
+      canvas.width = rect.width
+      canvas.height = rect.height // コンテナの高さに合わせる
+      
+      drawCanvas() // リサイズ後に再描画
     }
-  }
+
+    const resizeObserver = new ResizeObserver(resizeCanvas)
+    resizeObserver.observe(container)
+    
+    resizeCanvas() // 初回描画
+    
+    return () => resizeObserver.unobserve(container)
+  }, [drawCanvas]) // drawCanvas が変更されたらリサイズロジックも更新
+
 
   // Event handlers
   const getPersonAtPoint = (x, y) => {
@@ -372,8 +355,7 @@ const GenogramTool = () => {
     
     if (person) {
       setDraggedPerson(person)
-      // ドラッグ開始時にすぐに保存すると、クリックとの区別が難しくなる
-      // saveState() // MouseUp で保存するように変更も検討
+      // saveState() // MouseUpで保存
     }
   }
 
@@ -388,25 +370,21 @@ const GenogramTool = () => {
     setPeople(prev => prev.map(p => 
       p.id === draggedPerson.id ? { ...p, x, y } : p
     ))
-    // マウスムーブのたびに描画すると重くなる可能性があるため、
-    // requestAnimationFrame を使うか、drawCanvas() を直接呼ぶ
-    drawCanvas() 
+    // マウスムーブ中は state のみ更新（再描画は useEffect[drawCanvas] が行う）
   }
 
   const handleMouseUp = (event) => {
-    // ドラッグが完了した（=位置が変わった）場合にのみ履歴に保存
     if (draggedPerson) {
-      // ここで saveState() を呼ぶと、ドラッグ完了ごとに履歴が残る
-      // ただし、クリックとドラッグの判別が難しい
-      // クリックでも MouseDown -> MouseUp が発生するため
+      saveState() // ドラッグ完了時に履歴を保存
     }
     setDraggedPerson(null)
   }
 
   const handleClick = (event) => {
     // ドラッグ中はクリック処理を無効にする
-    if (draggedPerson && (event.movementX !== 0 || event.movementY !== 0)) {
-       // setDraggedPerson(null) // MouseUpで処理するので、ここでは何もしない
+    if (event.detail > 1 || draggedPerson) {
+      // (event.detail > 1 はダブルクリックなどを防ぐ)
+      // (draggedPerson はドラッグ後の MouseUp と Click の競合を防ぐ)
        return
     }
 
@@ -441,10 +419,6 @@ const GenogramTool = () => {
       setSelectedPerson(null)
       setSelectedPeople(new Set())
     }
-    
-    // クリック時には状態を保存する（ドラッグ開始とは別）
-    // ただし、ドラッグ後のMouseUpでもClickイベントが発生することがあるため注意
-    // saveState() // 適切なタイミングを要検討
   }
 
 
@@ -482,66 +456,72 @@ const GenogramTool = () => {
     setSelectedPerson(prev => ({ ...prev, [field]: !prev[field] }))
   }
 
-  // ... (以下、省略) ...
-
   return (
-    <div className="flex h-full">
-      {/* ↓↓↓ (修正点 1) 左ペイン：幅を固定(w-96)し、余白(p-6)と要素間(space-y-6)を増やす */}
-      <div className="w-96 flex-shrink-0 border-r bg-muted/40 p-6 space-y-6 overflow-y-auto">
+    // ↓↓↓ (修正点 1) 他のツールとレイアウトを統一 (grid, gap-6)
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      
+      {/* Control Panel */}
+      {/* ↓↓↓ (修正点 2) sticky, top-24 を追加して追従、space-y-6 でカード間の余白を増やす */}
+      <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-24 h-full">
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">ジェノグラム操作</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              ジェノグラム操作
+            </CardTitle>
           </CardHeader>
-          {/* ↓↓↓ (修正点 2) カード内の余白を増やす (space-y-4) */}
           <CardContent className="space-y-4">
             
-            {/* ↓↓↓ (修正点 3) ボタンを2列グリッドにし、隙間(gap-4)を増やす */}
-            <div className="grid grid-cols-2 gap-4">
-              <Button onClick={() => addPerson('male')} className="flex-1" variant="outline">
+            {/* ↓↓↓ (修正点 3) ボタンを2列グリッドにし、隙間(gap-2)を確保 */}
+            <div className="grid grid-cols-2 gap-2">
+              <Button onClick={() => addPerson('male')} className="flex-1" variant="outline" size="sm">
                 <Square className="w-4 h-4 mr-2" /> 男性を追加
               </Button>
-              <Button onClick={() => addPerson('female')} className="flex-1" variant="outline">
+              <Button onClick={() => addPerson('female')} className="flex-1" variant="outline" size="sm">
                 <Circle className="w-4 h-4 mr-2" /> 女性を追加
               </Button>
             </div>
             
             <Separator />
             
-            {/* ↓↓↓ (修正点 4) ボタン間の隙間を増やす (space-y-3) */}
             <div className="space-y-3">
-              <Label>選択中の人数: {selectedPeople.size}</Label>
+              <Label className="text-sm text-muted-foreground">
+                選択中の人数: <span className="font-bold text-foreground">{selectedPeople.size}</span>
+              </Label>
               <Button 
                 onClick={() => addRelationship('marriage')} 
                 disabled={selectedPeople.size !== 2}
                 className="w-full"
+                size="sm"
               >
-                <Heart className="w-4 h-4 mr-2" /> 婚姻関係を追加
+                <Heart className="w-4 h-4 mr-2" /> 婚姻関係 (2人)
               </Button>
               <Button 
                 onClick={() => addRelationship('child')} 
                 disabled={selectedPeople.size < 3}
                 className="w-full"
+                size="sm"
               >
-                <Baby className="w-4 h-4 mr-2" /> 親子関係を追加 (親2人+子1人以上)
+                <Baby className="w-4 h-4 mr-2" /> 親子関係 (親2人+子)
               </Button>
               <Button 
                 onClick={addHousehold} 
                 disabled={selectedPeople.size < 2}
                 className="w-full"
+                size="sm"
               >
-                <Home className="w-4 h-4 mr-2" /> 同居枠を追加
+                <Home className="w-4 h-4 mr-2" /> 同居枠 (2人以上)
               </Button>
             </div>
             
             <Separator />
             
-            {/* ↓↓↓ (修正点 5) ボタンを2列グリッドにし、隙間(gap-4)を増やす */}
-            <div className="grid grid-cols-2 gap-4">
-              <Button onClick={undo} className="flex-1" variant="outline">
+            <div className="grid grid-cols-2 gap-2">
+              <Button onClick={undo} className="flex-1" variant="outline" size="sm" disabled={history.length === 0}>
                 <RotateCcw className="w-4 h-4 mr-2" /> 元に戻す
               </Button>
-              <Button onClick={deleteSelected} className="flex-1" variant="destructive" disabled={selectedPeople.size === 0}>
-                <Trash2 className="w-4 h-4 mr-2" /> 削除
+              <Button onClick={deleteSelected} className="flex-1" variant="destructive" size="sm" disabled={selectedPeople.size === 0}>
+                <Trash2 className="w-4 h-4 mr-2" /> 選択削除
               </Button>
             </div>
             
@@ -551,85 +531,107 @@ const GenogramTool = () => {
           </CardContent>
         </Card>
 
-        {selectedPerson && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">人物詳細 ({selectedPerson.id})</CardTitle>
-            </CardHeader>
-            {/* ↓↓↓ (修正点 6) カード内の余白を増やす (space-y-4) */}
-            <CardContent className="space-y-4">
-              
-              {/* ↓↓↓ (修正点 7) LabelとInputの間の隙間を増やす (space-y-2) */}
-              <div className="space-y-2">
-                <Label htmlFor="name">名前</Label>
-                <Input 
-                  id="name" 
-                  value={selectedPerson.name} 
-                  onChange={(e) => updatePersonDetails('name', e.target.value)}
-                />
+        {/* Person Details */}
+        {/* ↓↓↓ (修正点 4) レイアウトシフトを防ぐため、常にCardを表示 */}
+        <Card className="transition-all duration-300">
+          <CardHeader>
+            <CardTitle className="text-lg">人物詳細</CardTitle>
+            <Badge 
+              variant={selectedPerson ? "secondary" : "outline"}
+              style={{ minWidth: '80px', textAlign: 'center' }}
+            >
+              {selectedPerson ? `ID: ${selectedPerson.id}` : '未選択'}
+            </Badge>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!selectedPerson ? (
+              // マーカー未選択時のプレースホルダー
+              <div className="text-sm text-muted-foreground text-center py-10 space-y-2">
+                <MousePointerSquare className="h-8 w-8 mx-auto text-muted-foreground/50" />
+                <p>キャンバス上の人物をクリックすると</p>
+                <p>詳細を編集できます。</p>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="age">年齢</Label>
-                <Input 
-                  id="age" 
-                  type="number"
-                  value={selectedPerson.age} 
-                  onChange={(e) => updatePersonDetails('age', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="notes">備考</Label>
-                <Textarea 
-                  id="notes" 
-                  value={selectedPerson.notes} 
-                  onChange={(e) => updatePersonDetails('notes', e.target.value)}
-                />
-              </div>
-              
-              <Separator />
-              
-              {/* ↓↓↓ (修正点 8) ボタン間の隙間を増やす (space-y-3) */}
-              <div className="space-y-3">
-                <Button 
-                  onClick={() => toggleStatus('isDeceased')} 
-                  variant={selectedPerson.isDeceased ? 'default' : 'outline'}
-                  className="w-full"
-                >
-                  {selectedPerson.isDeceased ? '死亡済み (解除)' : '死亡済み (設定)'}
-                </Button>
-                <Button 
-                  onClick={() => toggleStatus('isCaregiver')} 
-                  variant={selectedPerson.isCaregiver ? 'default' : 'outline'}
-                  className="w-full"
-                >
-                  {selectedPerson.isCaregiver ? '主介護者 (解除)' : '主介護者 (設定)'}
-                </Button>
-                <Button 
-                  onClick={() => toggleStatus('isKeyPerson')} 
-                  variant={selectedPerson.isKeyPerson ? 'default' : 'outline'}
-                  className="w-full"
-                >
-                  {selectedPerson.isKeyPerson ? 'キーパーソン (解除)' : 'キーパーソン (設定)'}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            ) : (
+              // マーカー選択時の編集欄
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="name">名前</Label>
+                  <Input 
+                    id="name" 
+                    value={selectedPerson.name} 
+                    onChange={(e) => updatePersonDetails('name', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="age">年齢</Label>
+                  <Input 
+                    id="age" 
+                    type="number"
+                    value={selectedPerson.age} 
+                    onChange={(e) => updatePersonDetails('age', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="notes">備考</Label>
+                  <Textarea 
+                    id="notes" 
+                    value={selectedPerson.notes} 
+                    onChange={(e) => updatePersonDetails('notes', e.target.value)}
+                    rows={3}
+                  />
+                </div>
+                
+                <Separator />
+                
+                <div className="space-y-3">
+                  <Button 
+                    onClick={() => toggleStatus('isDeceased')} 
+                    variant={selectedPerson.isDeceased ? 'destructive' : 'outline'}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {selectedPerson.isDeceased ? '死亡済み (解除)' : '死亡済み (設定)'}
+                  </Button>
+                  <Button 
+                    onClick={() => toggleStatus('isCaregiver')} 
+                    variant={selectedPerson.isCaregiver ? 'default' : 'outline'}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {selectedPerson.isCaregiver ? '主介護者 (解除)' : '主介護者 (設定)'}
+                  </Button>
+                  <Button 
+                    onClick={() => toggleStatus('isKeyPerson')} 
+                    variant={selectedPerson.isKeyPerson ? 'default' : 'outline'}
+                    className="w-full"
+                    size="sm"
+                  >
+                    {selectedPerson.isKeyPerson ? 'キーパーソン (解除)' : 'キーパーソン (設定)'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </div>
       
-      {/* ↓↓↓ (修正点 9) 右ペイン：残り幅すべて(flex-1)を使い、余白(p-8)を大きくする */}
-      <div className="flex-1 p-8 overflow-hidden">
-        {/* ↓↓↓ (修正点 10) キャンバスの枠：角丸(rounded-xl)と影(shadow-xl)をモダンに */}
-        <div className="border rounded-xl shadow-xl overflow-hidden h-full">
-          <canvas 
-            ref={canvasRef} 
-            className="w-full h-full" // キャンバスがコンテナいっぱいに広がるように
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onClick={handleClick}
-          />
-        </div>
+      {/* Canvas Area */}
+      {/* ↓↓↓ (修正点 5) 他のツールとレイアウトを統一 (lg:col-span-3, Card, CardContent) */}
+      <div className="lg:col-span-3">
+        <Card className="h-full min-h-[732px]">
+          <CardContent className="p-4 h-full">
+            <div className="w-full h-full border rounded-md overflow-hidden bg-background">
+              <canvas 
+                ref={canvasRef} 
+                className="w-full h-full" // w-full h-full に
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onClick={handleClick}
+              />
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
