@@ -1,5 +1,4 @@
 /* src/index.css
-  このファイルは main.jsx からインポートされます。
   Tailwind CSS の読み込みと、shadcn/ui のテーマ（CSS変数）を定義します。
 */
 
@@ -77,7 +76,11 @@
 /* 基本的なスタイルリセット */
 @layer base {
   * {
-    @apply border-border;
+    /* 【修正点】
+      @apply border-border; (Tailwind v4 で認識されないクラス) を
+      border-color: hsl(var(--border)); (CSS変数を直接指定) に変更します。
+    */
+    border-color: hsl(var(--border));
   }
   body {
     @apply bg-background text-foreground;
