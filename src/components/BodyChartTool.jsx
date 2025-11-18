@@ -5,11 +5,21 @@ import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Textarea } from '@/components/ui/textarea.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
-import { Separator } from '@/components/ui/separator.jsx'
 import { 
   User, AlertCircle, Zap, Minus, MessageSquare, 
   Download, RotateCcw, Trash2, X 
 } from 'lucide-react'
+
+// 床ずれの好発部位（座標）
+const pressureSoreHotspots = [
+  // 背面
+  { x: 450, y: 140, r: 20, label: '肩甲骨' },
+  { x: 450, y: 280, r: 25, label: '仙骨部' },
+  { x: 450, y: 190, r: 15, label: '肘' },
+  { x: 450, y: 550, r: 20, label: '踵骨部' },
+  // 正面（側面）
+  { x: 200, y: 450, r: 20, label: '大転子部' },
+];
 
 const BodyChartTool = () => {
   const canvasRef = useRef(null)
@@ -54,16 +64,6 @@ const BodyChartTool = () => {
     }
   }
 
-  // Body outline coordinates (simplified human figure)
-  const bodyOutline = {
-    head: { x: 300, y: 80, width: 80, height: 100 },
-    torso: { x: 250, y: 180, width: 180, height: 250 },
-    leftArm: { x: 180, y: 200, width: 60, height: 180 },
-    rightArm: { x: 440, y: 200, width: 60, height: 180 },
-    leftLeg: { x: 270, y: 430, width: 60, height: 200 },
-    rightLeg: { x: 350, y: 430, width: 60, height: 200 }
-  }
-
   // Canvas setup
   useEffect(() => {
     const canvas = canvasRef.current
@@ -71,16 +71,26 @@ const BodyChartTool = () => {
 
     const resizeCanvas = () => {
       const container = canvas.parentElement
+      if (!container) return;
       const rect = container.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = Math.max(700, rect.width * 0.8)
+      // 幅を固定し、高さを可変にする（スマホ対応を考慮）
+      canvas.width = Math.min(rect.width, 650); // 最大幅650px
+      canvas.height = 700; // 高さを700pxに固定
       drawCanvas()
     }
 
-    resizeCanvas()
-    window.addEventListener('resize', resizeCanvas)
-    return () => window.removeEventListener('resize', resizeCanvas)
-  }, [markers, selectedMarker])
+    // ResizeObserverを使用してコンテナのサイズ変更を監視
+    const container = canvas.parentElement
+    if (container) {
+      const resizeObserver = new ResizeObserver(resizeCanvas)
+      resizeObserver.observe(container)
+      
+      // 初期描画
+      resizeCanvas()
+      
+      return () => resizeObserver.unobserve(container)
+    }
+  }, [markers, selectedMarker, currentPath]) // currentPathも依存配列に追加
 
   // Save state for undo
   const saveState = () => {
@@ -96,6 +106,67 @@ const BodyChartTool = () => {
     setSelectedMarker(null)
   }
 
+  // Draw simple human outline
+  const drawHumanOutline = (ctx, startX) => {
+    ctx.strokeStyle = '#374151';
+    ctx.lineWidth = 2;
+    ctx.fillStyle = '#f9fafb';
+    
+    // 頭部
+    ctx.beginPath();
+    ctx.arc(startX, 80, 40, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.stroke();
+    
+    // 胴体
+    ctx.beginPath();
+    ctx.moveTo(startX - 50, 120);
+    ctx.lineTo(startX + 50, 120);
+    ctx.lineTo(startX + 50, 320);
+    ctx.lineTo(startX - 50, 320);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    
+    // 腕
+    ctx.beginPath();
+    ctx.moveTo(startX - 50, 130);
+    ctx.lineTo(startX - 80, 130);
+    ctx.lineTo(startX - 80, 280);
+    ctx.lineTo(startX - 50, 280);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.moveTo(startX + 50, 130);
+    ctx.lineTo(startX + 80, 130);
+    ctx.lineTo(startX + 80, 280);
+    ctx.lineTo(startX + 50, 280);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    
+    // 脚
+    ctx.beginPath();
+    ctx.moveTo(startX - 40, 320);
+    ctx.lineTo(startX - 10, 320);
+    ctx.lineTo(startX - 10, 470);
+    ctx.lineTo(startX - 40, 470);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(startX + 10, 320);
+    ctx.lineTo(startX + 40, 320);
+    ctx.lineTo(startX + 40, 470);
+    ctx.lineTo(startX + 10, 470);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  };
+
   // Draw canvas
   const drawCanvas = () => {
     const canvas = canvasRef.current
@@ -104,49 +175,36 @@ const BodyChartTool = () => {
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     
-        // Draw body outline (手書き風の線画)
-    ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 2
-    
+    const centerX = canvas.width / 2;
+    const frontX = centerX - 150;
+    const backX = centerX + 150;
+
     // Draw front view
-    bodyOutline.front.forEach(part => {
-      if (part.type === 'circle') {
-        ctx.beginPath()
-        ctx.arc(part.x, part.y, part.r, 0, 2 * Math.PI)
-        ctx.stroke()
-      } else if (part.type === 'rect') {
-        ctx.strokeRect(part.x, part.y, part.w, part.h)
-      } else if (part.type === 'line') {
-        ctx.beginPath()
-        ctx.moveTo(part.x1, part.y1)
-        ctx.lineTo(part.x2, part.y2)
-        ctx.stroke()
-      }
-    })
+    drawHumanOutline(ctx, frontX);
     
     // Draw back view
-    bodyOutline.back.forEach(part => {
-      if (part.type === 'circle') {
-        ctx.beginPath()
-        ctx.arc(part.x, part.y, part.r, 0, 2 * Math.PI)
-        ctx.stroke()
-      } else if (part.type === 'rect') {
-        ctx.strokeRect(part.x, part.y, part.w, part.h)
-      } else if (part.type === 'line') {
-        ctx.beginPath()
-        ctx.moveTo(part.x1, part.y1)
-        ctx.lineTo(part.x2, part.y2)
-        ctx.stroke()
-      }
-    })
+    drawHumanOutline(ctx, backX);
     
-    // ラベルの追加 (手書きサンプルに合わせて)
+    // ラベルの追加
     ctx.font = '16px sans-serif'
     ctx.textAlign = 'center'
     ctx.fillStyle = '#000000'
-    ctx.fillText('(正面)', 200, 50)
-    ctx.fillText('(背面)', 450, 50)
+    ctx.fillText('(正面)', frontX, 50)
+    ctx.fillText('(背面)', backX, 50)
     
+    // 床ずれ好発部位をハイライト
+    ctx.fillStyle = '#fefce8'; // 黄色（薄め）
+    ctx.strokeStyle = '#facc15'; // 黄色（濃いめ）
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    pressureSoreHotspots.forEach(spot => {
+      ctx.beginPath();
+      ctx.arc(spot.x + (centerX - 300), spot.y, spot.r, 0, 2 * Math.PI); // X座標をキャンバス中央基準に調整
+      ctx.fill();
+      ctx.stroke();
+    });
+    ctx.setLineDash([]);
+
     // Draw current drawing path
     if (currentPath.length > 1) {
       const markerType = markerTypes[currentMarkerType]
@@ -163,6 +221,8 @@ const BodyChartTool = () => {
     // Draw markers
     markers.forEach(marker => {
       const markerType = markerTypes[marker.type]
+      if (!markerType) return; // 不明なマーカータイプはスキップ
+
       const isSelected = selectedMarker && selectedMarker.id === marker.id
       
       ctx.strokeStyle = isSelected ? '#3b82f6' : markerType.color
@@ -180,10 +240,11 @@ const BodyChartTool = () => {
         
         // Fill area if it's a closed shape
         if (marker.path.length > 3) {
+          ctx.closePath(); // パスを閉じる
           ctx.fill()
         }
       } else if (marker.x && marker.y) {
-        // Draw point marker
+        // Draw point marker (以前のロジック、念のため残す)
         ctx.beginPath()
         ctx.arc(marker.x, marker.y, 8, 0, 2 * Math.PI)
         ctx.fill()
@@ -210,6 +271,7 @@ const BodyChartTool = () => {
   // Mouse events
   const handleCanvasMouseDown = (e) => {
     const canvas = canvasRef.current
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
@@ -217,6 +279,7 @@ const BodyChartTool = () => {
     // Check if clicking on existing marker
     const clickedMarker = markers.find(marker => {
       if (marker.path && marker.path.length > 0) {
+        // パスの近くをクリックしたか簡易判定
         return marker.path.some(point => {
           const dx = x - point.x
           const dy = y - point.y
@@ -246,6 +309,7 @@ const BodyChartTool = () => {
     if (!isDrawing) return
     
     const canvas = canvasRef.current
+    if (!canvas) return;
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
@@ -298,6 +362,7 @@ const BodyChartTool = () => {
   // Save as image
   const saveAsImage = () => {
     const canvas = canvasRef.current
+    if (!canvas) return;
     const link = document.createElement('a')
     link.download = 'body_chart.png'
     link.href = canvas.toDataURL()
@@ -306,11 +371,13 @@ const BodyChartTool = () => {
 
   // Clear all
   const clearAll = () => {
-    if (confirm('すべてのマーカーを削除しますか？')) {
+    // window.confirm は Vercel/iframe 環境で動作しない可能性があるため、
+    // まずは確認なしで削除（またはカスタムモーダルを実装）
+    // if (confirm('すべてのマーカーを削除しますか？')) {
       saveState()
       setMarkers([])
       setSelectedMarker(null)
-    }
+    // }
   }
 
   return (
@@ -369,7 +436,8 @@ const BodyChartTool = () => {
                   className="w-full justify-start"
                   style={{
                     backgroundColor: currentMarkerType === key ? type.color : undefined,
-                    borderColor: type.color
+                    borderColor: type.color,
+                    color: currentMarkerType === key ? 'white' : type.color
                   }}
                 >
                   <IconComponent className="h-4 w-4 mr-2" />
@@ -388,12 +456,14 @@ const BodyChartTool = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">マーカー詳細</CardTitle>
-              <Badge 
-                variant="secondary"
-                style={{ backgroundColor: markerTypes[selectedMarker.type].color + '20' }}
-              >
-                {markerTypes[selectedMarker.type].name}
-              </Badge>
+              {markerTypes[selectedMarker.type] && (
+                <Badge 
+                  variant="secondary"
+                  style={{ backgroundColor: markerTypes[selectedMarker.type].color + '20' }}
+                >
+                  {markerTypes[selectedMarker.type].name}
+                </Badge>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -460,7 +530,7 @@ const BodyChartTool = () => {
               <p>• マーカー種類を選択</p>
               <p>• 身体図上でドラッグして描画</p>
               <p>• マーカーをクリックして編集</p>
-              <p>• 床ずれの好発部位は黄色で表示</p>
+              <p>• 床ずれの好発部位は薄黄色で表示</p>
             </div>
           </CardContent>
         </Card>
@@ -486,14 +556,14 @@ const BodyChartTool = () => {
       {/* Canvas Area */}
       <div className="lg:col-span-3">
         <Card className="h-full">
-          <CardContent className="p-0">
+          <CardContent className="p-0 flex justify-center">
             <canvas
               ref={canvasRef}
               onMouseDown={handleCanvasMouseDown}
               onMouseMove={handleCanvasMouseMove}
               onMouseUp={handleCanvasMouseUp}
-              className="w-full border rounded cursor-crosshair"
-              style={{ minHeight: '700px' }}
+              onContextMenu={(e) => e.preventDefault()} // 右クリックメニューを無効化
+              className="border rounded cursor-crosshair"
             />
           </CardContent>
         </Card>
