@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Users, Activity, HomeIcon } from "lucide-react"; // アイコン
 
 // 3つのツールコンポーネントをインポートします
-// パスをエイリアス（`@/`）から相対パス（`./`）に修正しました
+// ファイルが src/components/ の直下にあるため、相対パスで指定します。
 import GenogramTool from "./components/GenogramTool.jsx";
 import BodyChartTool from "./components/BodyChartTool.jsx";
 import HouseLayoutTool from "./components/HouseLayoutTool.jsx";
