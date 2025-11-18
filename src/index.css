@@ -76,17 +76,11 @@
 /* 基本的なスタイルリセット */
 @layer base {
   * {
-    /*
-      @apply border-border; を
-      border-color: hsl(var(--border)); に変更
-    */
+    /* Vercelのエラー（border-border）修正済み */
     border-color: hsl(var(--border));
   }
   body {
-    /* 【重要】
-      @apply bg-background text-foreground; を
-      CSS変数を直接使う形に変更
-    */
+    /* Vercelのエラー（bg-background）修正済み */
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-feature-settings: "rlig" 1, "calt" 1;
