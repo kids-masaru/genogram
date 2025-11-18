@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.jsx'
 import { Input } from '@/components/ui/input.jsx'
@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea.jsx'
 import { Badge } from '@/components/ui/badge.jsx'
 import { 
   User, AlertCircle, Zap, Minus, MessageSquare, 
-  Download, RotateCcw, Trash2, X 
+  Download, RotateCcw, Trash2, X, MousePointerSquare 
 } from 'lucide-react'
 
 // 床ずれの好発部位（座標）
@@ -21,6 +21,103 @@ const pressureSoreHotspots = [
   { x: 200, y: 450, r: 20, label: '大転子部' },
 ];
 
+// Marker types with colors and descriptions
+const markerTypes = {
+  pressure_sore: {
+    name: '床ずれ',
+    color: '#dc2626',
+    icon: AlertCircle,
+    stages: ['ステージI', 'ステージII', 'ステージIII', 'ステージIV', 'DTI疑い']
+  },
+  paralysis: {
+    name: 'マヒ',
+    color: '#7c3aed',
+    icon: Zap,
+    description: '運動機能の麻痺'
+  },
+  amputation: {
+    name: '欠損',
+    color: '#059669',
+    icon: Minus,
+    description: '身体部位の欠損'
+  },
+  dysfunction: {
+    name: '機能低下',
+    color: '#d97706',
+    icon: AlertCircle,
+    description: '機能の低下・障害'
+  },
+  comment: {
+    name: 'コメント',
+    color: '#6b7280',
+    icon: MessageSquare,
+    description: '自由記述'
+  }
+}
+
+// 身体図の描画ロジックをコンポーネントの外（またはuseCallback）に
+// （useCallbackにすると依存関係が複雑になるため、ここでは内部関数として定義）
+const drawHumanOutline = (ctx, startX) => {
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 2;
+  ctx.fillStyle = 'hsl(var(--card))'; // 背景色をCardの色に合わせる
+  
+  // 頭部
+  ctx.beginPath();
+  ctx.arc(startX, 80, 40, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.stroke();
+  
+  // 胴体
+  ctx.beginPath();
+  ctx.moveTo(startX - 50, 120);
+  ctx.lineTo(startX + 50, 120);
+  ctx.lineTo(startX + 50, 320);
+  ctx.lineTo(startX - 50, 320);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  
+  // 腕
+  ctx.beginPath();
+  ctx.moveTo(startX - 50, 130);
+  ctx.lineTo(startX - 80, 130);
+  ctx.lineTo(startX - 80, 280);
+  ctx.lineTo(startX - 50, 280);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  
+  ctx.beginPath();
+  ctx.moveTo(startX + 50, 130);
+  ctx.lineTo(startX + 80, 130);
+  ctx.lineTo(startX + 80, 280);
+  ctx.lineTo(startX + 50, 280);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  
+  // 脚
+  ctx.beginPath();
+  ctx.moveTo(startX - 40, 320);
+  ctx.lineTo(startX - 10, 320);
+  ctx.lineTo(startX - 10, 470);
+  ctx.lineTo(startX - 40, 470);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(startX + 10, 320);
+  ctx.lineTo(startX + 40, 320);
+  ctx.lineTo(startX + 40, 470);
+  ctx.lineTo(startX + 10, 470);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+};
+
+
 const BodyChartTool = () => {
   const canvasRef = useRef(null)
   const [selectedMarker, setSelectedMarker] = useState(null)
@@ -29,68 +126,6 @@ const BodyChartTool = () => {
   const [isDrawing, setIsDrawing] = useState(false)
   const [currentPath, setCurrentPath] = useState([])
   const [history, setHistory] = useState([])
-
-  // Marker types with colors and descriptions
-  const markerTypes = {
-    pressure_sore: {
-      name: '床ずれ',
-      color: '#dc2626',
-      icon: AlertCircle,
-      stages: ['ステージI', 'ステージII', 'ステージIII', 'ステージIV', 'DTI疑い']
-    },
-    paralysis: {
-      name: 'マヒ',
-      color: '#7c3aed',
-      icon: Zap,
-      description: '運動機能の麻痺'
-    },
-    amputation: {
-      name: '欠損',
-      color: '#059669',
-      icon: Minus,
-      description: '身体部位の欠損'
-    },
-    dysfunction: {
-      name: '機能低下',
-      color: '#d97706',
-      icon: AlertCircle,
-      description: '機能の低下・障害'
-    },
-    comment: {
-      name: 'コメント',
-      color: '#6b7280',
-      icon: MessageSquare,
-      description: '自由記述'
-    }
-  }
-
-  // Canvas setup
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-
-    const resizeCanvas = () => {
-      const container = canvas.parentElement
-      if (!container) return;
-      const rect = container.getBoundingClientRect()
-      // 幅を固定し、高さを可変にする（スマホ対応を考慮）
-      canvas.width = Math.min(rect.width, 650); // 最大幅650px
-      canvas.height = 700; // 高さを700pxに固定
-      drawCanvas()
-    }
-
-    // ResizeObserverを使用してコンテナのサイズ変更を監視
-    const container = canvas.parentElement
-    if (container) {
-      const resizeObserver = new ResizeObserver(resizeCanvas)
-      resizeObserver.observe(container)
-      
-      // 初期描画
-      resizeCanvas()
-      
-      return () => resizeObserver.unobserve(container)
-    }
-  }, [markers, selectedMarker, currentPath]) // currentPathも依存配列に追加
 
   // Save state for undo
   const saveState = () => {
@@ -106,78 +141,22 @@ const BodyChartTool = () => {
     setSelectedMarker(null)
   }
 
-  // Draw simple human outline
-  const drawHumanOutline = (ctx, startX) => {
-    ctx.strokeStyle = '#374151';
-    ctx.lineWidth = 2;
-    ctx.fillStyle = '#f9fafb';
-    
-    // 頭部
-    ctx.beginPath();
-    ctx.arc(startX, 80, 40, 0, 2 * Math.PI);
-    ctx.fill();
-    ctx.stroke();
-    
-    // 胴体
-    ctx.beginPath();
-    ctx.moveTo(startX - 50, 120);
-    ctx.lineTo(startX + 50, 120);
-    ctx.lineTo(startX + 50, 320);
-    ctx.lineTo(startX - 50, 320);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    
-    // 腕
-    ctx.beginPath();
-    ctx.moveTo(startX - 50, 130);
-    ctx.lineTo(startX - 80, 130);
-    ctx.lineTo(startX - 80, 280);
-    ctx.lineTo(startX - 50, 280);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.moveTo(startX + 50, 130);
-    ctx.lineTo(startX + 80, 130);
-    ctx.lineTo(startX + 80, 280);
-    ctx.lineTo(startX + 50, 280);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    
-    // 脚
-    ctx.beginPath();
-    ctx.moveTo(startX - 40, 320);
-    ctx.lineTo(startX - 10, 320);
-    ctx.lineTo(startX - 10, 470);
-    ctx.lineTo(startX - 40, 470);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(startX + 10, 320);
-    ctx.lineTo(startX + 40, 320);
-    ctx.lineTo(startX + 40, 470);
-    ctx.lineTo(startX + 10, 470);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  };
-
   // Draw canvas
-  const drawCanvas = () => {
+  // useCallback を使い、依存関係を明確化
+  const drawCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     
+    // キャンバス幅に基づいて中央配置
     const centerX = canvas.width / 2;
-    const frontX = centerX - 150;
-    const backX = centerX + 150;
+    const frontX = Math.max(150, centerX - 150);
+    const backX = Math.min(canvas.width - 150, centerX + 150);
+    
+    // 身体図のスケールや位置を調整
+    // (ここでは簡易的にX座標のみ調整)
 
     // Draw front view
     drawHumanOutline(ctx, frontX);
@@ -188,7 +167,7 @@ const BodyChartTool = () => {
     // ラベルの追加
     ctx.font = '16px sans-serif'
     ctx.textAlign = 'center'
-    ctx.fillStyle = '#000000'
+    ctx.fillStyle = 'hsl(var(--foreground))' // テキスト色をテーマに合わせる
     ctx.fillText('(正面)', frontX, 50)
     ctx.fillText('(背面)', backX, 50)
     
@@ -198,8 +177,10 @@ const BodyChartTool = () => {
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 2]);
     pressureSoreHotspots.forEach(spot => {
+      // 座標を背面図(backX)基準で動的に調整
+      const dynamicX = backX + (spot.x - 450); 
       ctx.beginPath();
-      ctx.arc(spot.x + (centerX - 300), spot.y, spot.r, 0, 2 * Math.PI); // X座標をキャンバス中央基準に調整
+      ctx.arc(dynamicX, spot.y, spot.r, 0, 2 * Math.PI); 
       ctx.fill();
       ctx.stroke();
     });
@@ -266,7 +247,42 @@ const BodyChartTool = () => {
         ctx.fillText(marker.text, centerX, centerY - 15)
       }
     })
-  }
+  }, [markers, selectedMarker, currentPath, currentMarkerType]);
+
+  // Canvasの描画は、依存関係が変更されたときにuseEffectで実行
+  useEffect(() => {
+    drawCanvas();
+  }, [drawCanvas]);
+
+  // Canvasのリサイズロジック (マウント時に1回だけ実行)
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const container = canvas.parentElement;
+    if (!container) return;
+
+    const resizeCanvas = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width === 0) return;
+      
+      // コンテナの幅に合わせてキャンバスの幅を設定
+      canvas.width = rect.width;
+      // 高さは固定
+      canvas.height = 700;
+      
+      drawCanvas(); // リサイズ後に再描画
+    };
+
+    const resizeObserver = new ResizeObserver(resizeCanvas);
+    resizeObserver.observe(container);
+    
+    resizeCanvas(); // 初回描画
+    
+    return () => resizeObserver.unobserve(container);
+    // drawCanvasを依存配列から削除し、マウント時のみ実行
+    // drawCanvasはresizeObserverコールバック内で最新のものが呼ばれる
+  }, [drawCanvas]); // drawCanvas が変更されたらリサイズロジックも更新
+
 
   // Mouse events
   const handleCanvasMouseDown = (e) => {
@@ -371,19 +387,21 @@ const BodyChartTool = () => {
 
   // Clear all
   const clearAll = () => {
-    // window.confirm は Vercel/iframe 環境で動作しない可能性があるため、
-    // まずは確認なしで削除（またはカスタムモーダルを実装）
-    // if (confirm('すべてのマーカーを削除しますか？')) {
+    // 将来的にカスタムアラートダイアログ（shadcn/ui）に置き換えることを推奨
+    if (window.confirm('すべてのマーカーを削除しますか？')) {
       saveState()
       setMarkers([])
       setSelectedMarker(null)
-    // }
+    }
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 p-6">
+    // ↓↓↓ (修正点) p-6 を削除 (親のApp.jsxで設定済)、gap-6で余白を確保
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      
       {/* Control Panel */}
-      <div className="lg:col-span-1 space-y-4">
+      {/* ↓↓↓ (修正点) sticky top-24 を追加して追従、space-y-6 でカード間の余白を増やす */}
+      <div className="lg:col-span-1 space-y-6 lg:sticky lg:top-24 h-full">
         {/* Basic Controls */}
         <Card>
           <CardHeader>
@@ -410,11 +428,11 @@ const BodyChartTool = () => {
                 disabled={!selectedMarker}
               >
                 <Trash2 className="h-4 w-4 mr-1" />
-                削除
+                選択削除
               </Button>
             </div>
-            <div className="text-sm text-gray-600">
-              マーカー数: {markers.length}個
+            <div className="text-sm text-muted-foreground">
+              マーカー数: <span className="font-bold">{markers.length}</span> 個
             </div>
           </CardContent>
         </Card>
@@ -424,7 +442,8 @@ const BodyChartTool = () => {
           <CardHeader>
             <CardTitle className="text-lg">マーカー種類</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          {/* ↓↓↓ (修正点) flex flex-col gap-2 で余白を統一 */}
+          <CardContent className="flex flex-col gap-2">
             {Object.entries(markerTypes).map(([key, type]) => {
               const IconComponent = type.icon
               return (
@@ -433,92 +452,115 @@ const BodyChartTool = () => {
                   variant={currentMarkerType === key ? "default" : "outline"}
                   size="sm"
                   onClick={() => setCurrentMarkerType(key)}
-                  className="w-full justify-start"
+                  className="w-full justify-start text-sm"
                   style={{
                     backgroundColor: currentMarkerType === key ? type.color : undefined,
                     borderColor: type.color,
-                    color: currentMarkerType === key ? 'white' : type.color
+                    color: currentMarkerType === key ? 'white' : type.color,
+                    opacity: currentMarkerType === key ? 1 : 0.7 // 非選択時を少し薄く
                   }}
                 >
-                  <IconComponent className="h-4 w-4 mr-2" />
+                  <IconComponent className="h-4 w-4 mr-2 flex-shrink-0" />
                   {type.name}
                 </Button>
               )
             })}
-            <div className="text-xs text-gray-500 mt-2">
+            <div className="text-xs text-muted-foreground pt-2">
               選択した種類でマーカーを描画できます
             </div>
           </CardContent>
         </Card>
 
         {/* Marker Details */}
-        {selectedMarker && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">マーカー詳細</CardTitle>
-              {markerTypes[selectedMarker.type] && (
+        {/* ↓↓↓ (修正点) レイアウトシフトを防ぐため、常にCardを表示 */}
+        <Card className="transition-all duration-300">
+          <CardHeader>
+            <CardTitle className="text-lg">マーカー詳細</CardTitle>
+            {selectedMarker && markerTypes[selectedMarker.type] ? (
                 <Badge 
                   variant="secondary"
-                  style={{ backgroundColor: markerTypes[selectedMarker.type].color + '20' }}
+                  style={{ 
+                    backgroundColor: markerTypes[selectedMarker.type].color + '20',
+                    color: markerTypes[selectedMarker.type].color
+                  }}
+                  className="border"
+                  // ↓↓↓ (修正点) Badgeの幅がテキストによって変わらないように
+                  style={{ minWidth: '80px', textAlign: 'center' }} 
                 >
                   {markerTypes[selectedMarker.type].name}
                 </Badge>
+              ) : (
+                <Badge variant="outline" style={{ minWidth: '80px', textAlign: 'center' }}>
+                  未選択
+                </Badge>
               )}
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="marker-text">説明</Label>
-                <Input
-                  id="marker-text"
-                  value={selectedMarker.text}
-                  onChange={(e) => updateSelectedMarker('text', e.target.value)}
-                  placeholder="マーカーの説明を入力"
-                />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!selectedMarker ? (
+              // ↓↓↓ (修正点) マーカー未選択時のプレースホルダー
+              <div className="text-sm text-muted-foreground text-center py-10 space-y-2">
+                <MousePointerSquare className="h-8 w-8 mx-auto text-muted-foreground/50" />
+                <p>マーカーを選択するか、</p>
+                <p>新規に描画すると</p>
+                <p>詳細を編集できます。</p>
               </div>
-              
-              {selectedMarker.type === 'pressure_sore' && (
+            ) : (
+              // マーカー選択時の編集欄
+              <>
                 <div>
-                  <Label htmlFor="stage">床ずれステージ</Label>
+                  <Label htmlFor="marker-text">説明</Label>
+                  <Input
+                    id="marker-text"
+                    value={selectedMarker.text}
+                    onChange={(e) => updateSelectedMarker('text', e.target.value)}
+                    placeholder="マーカーの説明を入力"
+                  />
+                </div>
+                
+                {selectedMarker.type === 'pressure_sore' && (
+                  <div>
+                    <Label htmlFor="stage">床ずれステージ</Label>
+                    <select
+                      id="stage"
+                      value={selectedMarker.stage}
+                      onChange={(e) => updateSelectedMarker('stage', e.target.value)}
+                      className="w-full p-2 border rounded-md bg-transparent" // (修正点) 背景を透過
+                    >
+                      {markerTypes.pressure_sore.stages.map(stage => (
+                        <option key={stage} value={stage}>{stage}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                
+                <div>
+                  <Label htmlFor="severity">重症度</Label>
                   <select
-                    id="stage"
-                    value={selectedMarker.stage}
-                    onChange={(e) => updateSelectedMarker('stage', e.target.value)}
-                    className="w-full p-2 border rounded-md"
+                    id="severity"
+                    value={selectedMarker.severity}
+                    onChange={(e) => updateSelectedMarker('severity', e.target.value)}
+                    className="w-full p-2 border rounded-md bg-transparent" // (修正点) 背景を透過
                   >
-                    {markerTypes.pressure_sore.stages.map(stage => (
-                      <option key={stage} value={stage}>{stage}</option>
-                    ))}
+                    <option value="mild">軽度</option>
+                    <option value="moderate">中等度</option>
+                    <option value="severe">重度</option>
                   </select>
                 </div>
-              )}
-              
-              <div>
-                <Label htmlFor="severity">重症度</Label>
-                <select
-                  id="severity"
-                  value={selectedMarker.severity}
-                  onChange={(e) => updateSelectedMarker('severity', e.target.value)}
-                  className="w-full p-2 border rounded-md"
-                >
-                  <option value="mild">軽度</option>
-                  <option value="moderate">中等度</option>
-                  <option value="severe">重度</option>
-                </select>
-              </div>
-              
-              <div>
-                <Label htmlFor="notes">詳細メモ</Label>
-                <Textarea
-                  id="notes"
-                  value={selectedMarker.notes}
-                  onChange={(e) => updateSelectedMarker('notes', e.target.value)}
-                  placeholder="詳細な情報を入力"
-                  rows={3}
-                />
-              </div>
-            </CardContent>
-          </Card>
-        )}
+                
+                <div>
+                  <Label htmlFor="notes">詳細メモ</Label>
+                  <Textarea
+                    id="notes"
+                    value={selectedMarker.notes}
+                    onChange={(e) => updateSelectedMarker('notes', e.target.value)}
+                    placeholder="詳細な情報を入力"
+                    rows={3}
+                  />
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Instructions */}
         <Card>
@@ -526,12 +568,12 @@ const BodyChartTool = () => {
             <CardTitle className="text-lg">使い方</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-sm text-gray-600 space-y-2">
-              <p>• マーカー種類を選択</p>
-              <p>• 身体図上でドラッグして描画</p>
-              <p>• マーカーをクリックして編集</p>
-              <p>• 床ずれの好発部位は薄黄色で表示</p>
-            </div>
+            <ul className="text-sm text-muted-foreground space-y-2 list-disc list-inside">
+              <li>マーカー種類を選択</li>
+              <li>身体図上でドラッグして描画</li>
+              <li>描画したマーカーをクリックして編集</li>
+              <li>床ずれの好発部位は薄黄色で表示</li>
+            </ul>
           </CardContent>
         </Card>
 
@@ -540,7 +582,8 @@ const BodyChartTool = () => {
           <CardHeader>
             <CardTitle className="text-lg">保存・操作</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
+          {/* ↓↓↓ (修正点) flex flex-col gap-2 で余白を統一 */}
+          <CardContent className="flex flex-col gap-2">
             <Button onClick={saveAsImage} className="w-full">
               <Download className="h-4 w-4 mr-2" />
               画像保存
@@ -555,15 +598,18 @@ const BodyChartTool = () => {
 
       {/* Canvas Area */}
       <div className="lg:col-span-3">
-        <Card className="h-full">
-          <CardContent className="p-0 flex justify-center">
+        {/* ↓↓↓ (修正点) キャンバスの高さを固定(700px) + 余白(32px) = 732px */}
+        <Card className="h-full min-h-[732px]">
+          {/* ↓↓↓ (修正点) p-4 でキャンバスの周囲に余白, h-full */}
+          <CardContent className="p-4 h-full flex justify-center items-center">
             <canvas
               ref={canvasRef}
               onMouseDown={handleCanvasMouseDown}
               onMouseMove={handleCanvasMouseMove}
               onMouseUp={handleCanvasMouseUp}
               onContextMenu={(e) => e.preventDefault()} // 右クリックメニューを無効化
-              className="border rounded cursor-crosshair"
+              className="border rounded-md cursor-crosshair bg-background"
+              // (修正点) widthとheightはJS(useEffect)によって設定される
             />
           </CardContent>
         </Card>
