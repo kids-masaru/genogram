@@ -2,11 +2,9 @@
 export default {
   darkMode: ["class"],
   content: [
-    './pages/**/*.{js,ts,jsx,tsx}',
-    './components/**/*.{js,ts,jsx,tsx}',
-    './app/**/*.{js,ts,jsx,tsx}',
+    // 監視するファイルを、あなたのプロジェクト構成に合わせて修正
+    './index.html',
     './src/**/*.{js,ts,jsx,tsx}',
-    './index.html', // index.html も監視対象に追加
   ],
   prefix: "",
   theme: {
